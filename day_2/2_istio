@@ -2,6 +2,11 @@ kubectl create clusterrolebinding cluster-admin-binding \
     --clusterrole=cluster-admin \
     --user=$(gcloud config get-value core/account)
 
+curl https://raw.githubusercontent.com/kubernetes/helm/master/scripts/get > get_helm.sh
+
+chmod 700 get_helm.sh
+./get_helm.sh
+
 kubectl apply -f install/kubernetes/helm/helm-service-account.yaml
 helm init --service-account tiller
 helm install install/kubernetes/helm/istio --name istio --namespace istio-system
