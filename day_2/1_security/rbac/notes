@@ -1,0 +1,20 @@
+
+kubectl create namespace development
+kubectl create serviceaccount --namespace development developer
+
+kubectl create -f cr-cluster-read-all.yaml
+
+kubectl create -f rb-read-all.yaml --namespace=development
+kubectl create -f busybox.yaml
+./create-kubeconfig developer --namespace development
+
+
+#testing
+kubectl auth can-i list deployments --namespace development
+kubectl auth can-i delete deployments --namespace development
+kubectl auth can-i update pod --namespace development
+kubectl get ns
+
+kubectl get po --all-namespaces
+kubectl get po
+kubectl delete po busybox --namespace development

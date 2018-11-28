@@ -1,0 +1,11 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: cluster-read-all-rb
+subjects:
+- kind: ServiceAccount
+  name: developer
+roleRef:
+  kind: ClusterRole
+  name: cluster-read-all
+  apiGroup: rbac.authorization.k8s.io
