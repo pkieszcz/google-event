@@ -9,7 +9,8 @@ curl https://raw.githubusercontent.com/kubernetes/helm/master/scripts/get > get_
 chmod 700 get_helm.sh
 ./get_helm.sh
 
-kubectl apply -f helm/helm-service-account.yaml
+cd istio-*/
+kubectl apply -f install/kubernetes/helm/helm-service-account.yaml
 helm init --service-account tiller
 helm install install/kubernetes/helm/istio --name istio --namespace istio-system
 
