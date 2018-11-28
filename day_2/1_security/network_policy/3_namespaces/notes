@@ -1,0 +1,38 @@
+kubectl apply -f default-deny-all.yaml
+
+
+kubectl create namespace secondary
+
+kubectl run web --image=nginx \
+    --namespace secondary \
+    --labels=app=web --expose --port 80
+
+kubectl apply -f deny-from-other-namespaces.yaml
+
+# try it out
+
+kubectl run test-$RANDOM --namespace=default --rm -i -t --image=alpine -- sh
+wget -qO- --timeout=2 http://web.secondary
+
+kubectl run test-$RANDOM --namespace=secondary --rm -i -t --image=alpine -- sh
+wget -qO- --timeout=2 http://web.secondary
+
+
+# Allow all trafic from specific namespace
+kubectl run web --image=nginx \
+    --labels=app=web --expose --port 80
+
+kubectl create namespace dev
+kubectl label namespace/dev purpose=testing
+
+kubectl create namespace prod
+kubectl label namespace/prod purpose=production
+
+kubectl apply -f web-allow-prod.yaml
+
+# try it out
+kubectl run test-$RANDOM --namespace=dev --rm -i -t --image=alpine -- sh
+wget -qO- --timeout=2 http://web.default
+
+kubectl run test-$RANDOM --namespace=prod --rm -i -t --image=alpine -- sh
+wget -qO- --timeout=2 http://web.default

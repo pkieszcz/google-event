@@ -1,0 +1,325 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: nginx
+data:
+  # Adding new entries here will make them appear as files in the deployment.
+  # Please update k8s.io/k8s.io/README.md when you update this file
+  nginx.conf: |
+    worker_processes 5;
+
+    events {
+    }
+
+    http {
+      # Certs for all SSL server_names.
+      ssl_certificate     /certs/tls.crt;
+      ssl_certificate_key /certs/tls.key;
+      ssl_protocols       TLSv1 TLSv1.1 TLSv1.2;
+      ssl_ciphers         HIGH:!aNULL:!MD5;
+
+      # This is the main site.
+      #
+      # Upgrade HTTP to HTTPS.
+      server {
+        server_name k8s.io;
+        listen 80 default_server;
+
+        location = /_healthz {
+          add_header Content-Type text/plain;
+          return 200 'ok';
+        }
+
+        location / {
+          return 301 https://$host$request_uri;
+        }
+      }
+      # Handle HTTPS.
+      server {
+        server_name k8s.io;
+        listen 443 ssl;
+
+        location = /_healthz {
+          add_header Content-Type text/plain;
+          return 200 'ok';
+        }
+
+        location ~ ^/(?<repo>[^/]*)(?<subpath>/.*)?$ {
+          if ($arg_go-get = "1") {
+            # This is a go-get operation.
+            return 200 '
+                <html><head>
+                      <meta name="go-import"
+                            content="k8s.io/$repo
+                                     git https://github.com/kubernetes/$repo">
+                      <meta name="go-source"
+                            content="k8s.io/$repo
+                                     https://github.com/kubernetes/$repo
+                                     https://github.com/kubernetes/$repo/tree/master{/dir}
+                                     https://github.com/kubernetes/$repo/blob/master{/dir}/{file}#L{line}">
+                </head></html>
+            ';
+          }
+
+          # Default to redirecting to the "real" site.
+          return 301 https://kubernetes.io$request_uri;
+        }
+      }
+
+      # Vanity redirects for the new kubernetes-sigs repos
+      #
+      # Upgrade HTTP to HTTPS.
+      server {
+        server_name sigs.k8s.io;
+        listen 80;
+
+        location / {
+          return 301 https://$host$request_uri;
+        }
+      }
+      # Handle HTTPS
+      server {
+        server_name sigs.k8s.io;
+        listen 443 ssl;
+
+        # The ?! block is negative-lookahead to prevent `/repo/` from grouping into (`repo`, `/`) while `/repo/path` will still group as (`repo`, `/path`).
+        location ~ ^/(?<sig_repo>.*?)(?!/+$)(?<repo_subpath>/.*)?$ {
+          if ($arg_go-get = "1") {
+            # This is a go-get operation.
+            return 200 '
+                <html><head>
+                      <meta name="go-import"
+                            content="sigs.k8s.io/$sig_repo
+                                     git https://github.com/kubernetes-sigs/$sig_repo">
+                      <meta name="go-source"
+                            content="sigs.k8s.io/$sig_repo
+                                     https://github.com/kubernetes-sigs/$sig_repo
+                                     https://github.com/kubernetes-sigs/$sig_repo/tree/master{/dir}
+                                     https://github.com/kubernetes-sigs/$sig_repo/blob/master{/dir}/{file}#L{line}">
+                </head></html>
+            ';
+          }
+
+          if ($repo_subpath = "") {
+            # This is a regular request for https://sigs.k8s.io/<repo>
+            # Redirect to repo landing page.
+            return 301 https://github.com/kubernetes-sigs/$sig_repo;
+          }
+
+          # Default to redirecting to files in the tree.
+          return 301 https://github.com/kubernetes-sigs/$sig_repo/blob/master$repo_subpath;
+        }
+      }
+
+      #
+      # Vanity redirect rules.
+      #
+
+      server {
+        server_name apt.kubernetes.io apt.k8s.io;
+        listen 80;
+        listen 443 ssl;
+
+        rewrite ^/(.*)?$    https://packages.cloud.google.com/apt/$1 redirect;
+      }
+
+      server {
+        server_name yum.kubernetes.io yum.k8s.io;
+        listen 80;
+        listen 443 ssl;
+
+        rewrite ^/(.*)?$    https://packages.cloud.google.com/yum/$1 redirect;
+      }
+
+      server {
+        server_name blog.k8s.io;
+        listen 80;
+        listen 443 ssl;
+
+        rewrite ^/(.*)?$    http://blog.kubernetes.io/$1 redirect;
+      }
+
+      server {
+        server_name changelog.kubernetes.io changelog.k8s.io;
+        listen 80;
+        listen 443 ssl;
+
+        rewrite ^/$         https://github.com/kubernetes/kubernetes/blob/master/CHANGELOG.md redirect;
+        rewrite ^/(.*)?$    https://github.com/kubernetes/kubernetes/releases/tag/$1 redirect;
+      }
+      server {
+        server_name ci-test.kubernetes.io ci-test.k8s.io;
+        listen 80;
+        listen 443 ssl;
+
+        # This is really not ideal, but there's no obvious way to browse GCS that handles directories and files.
+        rewrite ^/$             https://console.developers.google.com/storage/browser/kubernetes-jenkins/logs redirect;
+        # Things that look like builds should be viewed on Gubernator
+        rewrite ^/(.*/\d+)/?$   https://k8s-gubernator.appspot.com/build/kubernetes-jenkins/logs/$1 redirect;
+        rewrite ^/(.*)/$        https://console.developers.google.com/storage/browser/kubernetes-jenkins/logs/$1 redirect;
+        rewrite ^/(.*)$         https://storage.cloud.google.com/kubernetes-jenkins/logs/$1 redirect;
+      }
+      server {
+        server_name code.kubernetes.io code.k8s.io;
+        listen 80;
+        listen 443 ssl;
+
+        rewrite ^/(.*)?$    https://github.com/kubernetes/kubernetes/tree/master/$1 redirect;
+      }
+      server {
+        server_name dl.k8s.io dl.kubernetes.io;
+        listen 80;
+        listen 443 ssl;
+
+        location / {
+          # Don't require /release/ if you want to get at the Kubernetes release artifacts, the common case.
+          rewrite ^/(v[0-9]+\.[0-9]+\.[0-9]+(-(alpha|beta|rc)\.[0-9]+)?/.*)$   https://storage.googleapis.com/kubernetes-release/release/$1 redirect;
+          # Provide a convenient redirect for CI (continuous integration) artifacts as well, which live in a different bucket.
+          rewrite ^/ci(-cross)?/?(.*)$              https://storage.googleapis.com/kubernetes-release-dev/ci$1/$2 redirect;
+          rewrite ^/(.*)$                  https://storage.googleapis.com/kubernetes-release/$1 redirect;
+        }
+      }
+      server {
+        server_name docs.k8s.io docs.kubernetes.io;
+        listen 80;
+        listen 443 ssl;
+
+        location / {
+          rewrite ^/v[0-9]+\.[0-9]+(/.*)?$     https://kubernetes.io/docs$1   redirect; # legacy
+          rewrite ^/(.*)$                      https://kubernetes.io/docs/$1  redirect;
+        }
+      }
+      server {
+        server_name examples.k8s.io examples.kubernetes.io;
+        listen 80;
+        listen 443 ssl;
+
+        location / {
+          rewrite ^/v([0-9]+\.[0-9]+)(/.*)?$    https://github.com/kubernetes/kubernetes/tree/release-$1/examples$2  redirect;
+          rewrite ^/(.*)$                       https://github.com/kubernetes/examples/tree/master/$1                redirect;
+        }
+      }
+      server {
+        server_name feature.k8s.io features.k8s.io feature.kubernetes.io features.kubernetes.io;
+        listen 80;
+        listen 443 ssl;
+
+        location / {
+          rewrite ^/(.*)$  https://github.com/kubernetes/features/issues/$1 redirect;
+        }
+      }
+      server {
+        server_name get.k8s.io get.kubernetes.io;
+        listen 80;
+        # 443 is covered below.
+
+        location / {
+          root /www/get;
+          index get-kube-insecure.sh;
+        }
+      }
+      server {
+        server_name get.k8s.io get.kubernetes.io;
+        listen 443 ssl;
+        # 80 is covered above.
+
+        # Note that 'location =' is an exact match, no sub-URI's match.
+        location = / {
+          proxy_set_header Host raw.githubusercontent.com;
+          proxy_set_header X-Real-IP $remote_addr;
+          proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+          proxy_next_upstream error timeout http_500 http_502 http_503 http_504;
+          proxy_pass https://raw.githubusercontent.com/kubernetes/kubernetes/master/cluster/get-kube.sh;
+        }
+      }
+      server {
+        server_name git.k8s.io git.kubernetes.io;
+        listen 80;
+        listen 443 ssl;
+
+        location / {
+          rewrite ^/$               https://github.com/kubernetes/ redirect;
+          rewrite ^/([^/]*)/?$      https://github.com/kubernetes/$1/ redirect;
+          rewrite ^/([^/]*)/(.*)$   https://github.com/kubernetes/$1/blob/master/$2 redirect;
+        }
+      }
+      server {
+        server_name go.k8s.io go.kubernetes.io;
+        listen 80;
+        listen 443 ssl;
+
+        # Please update README.md when you update the list below.
+        location / {
+          rewrite ^/bot-commands$    https://prow.k8s.io/command-help redirect;
+          rewrite ^/github-labels$   https://github.com/kubernetes/test-infra/blob/master/label_sync/labels.md redirect;
+          rewrite ^/good-first-issue$ https://github.com/search?q=org%3Akubernetes+org%3Akubernetes-sigs+org%3Akubernetes-incubator+org%3Akubernetes-csi+org%3Akubernetes-client+is%3Aopen+is%3Aissue+label%3A%22good+first+issue%22&type=Issues redirect;
+          rewrite ^/help-wanted$     https://github.com/search?q=org%3Akubernetes+org%3Akubernetes-sigs+org%3Akubernetes-incubator+org%3Akubernetes-csi+org%3Akubernetes-client+is%3Aopen+is%3Aissue+label%3A%22help+wanted%22&type=Issues redirect;
+          rewrite ^/needs-ok-to-test$ https://github.com/search?q=org%3Akubernetes+org%3Akubernetes-sigs+org%3Akubernetes-incubator+org%3Akubernetes-csi+org%3Akubernetes-client+is%3Aopen+is%3Apr+label%3Aneeds-ok-to-test+label%3A%22cncf-cla%3A+yes%22+-label%3Aneeds-rebase&type=Issues redirect;
+          rewrite ^/oncall$          https://storage.googleapis.com/kubernetes-jenkins/oncall.html redirect;
+          rewrite ^/owners$          https://github.com/kubernetes/community/blob/master/contributors/guide/owners.md redirect;
+          rewrite ^/partner-request$ https://docs.google.com/forms/d/e/1FAIpQLSdN1KtSKX2VAOPGABFlShkSd6CajQynoL4QCVtY0dj76MNDKg/viewform redirect;
+          rewrite ^/pr-dashboard$    https://k8s-gubernator.appspot.com/pr redirect;
+          rewrite ^/start$           https://kubernetes.io/docs/setup/pick-right-solution/ redirect;
+          rewrite ^/stuck-prs$       https://github.com/kubernetes/kubernetes/pulls?utf8=%E2%9C%93&q=is%3Apr%20is%3Aopen%20label%3Algtm%20label%3Aapproved%20-label%3Ado-not-merge%20-label%3Aneeds-rebase%20sort%3Aupdated-asc%20-status%3Asuccess redirect;
+          rewrite ^/test-health$     http://velodrome.k8s.io/dashboard/db/bigquery-metrics redirect;
+          rewrite ^/test-history$    https://storage.googleapis.com/kubernetes-test-history/static/index.html redirect;
+          rewrite ^/triage$          https://storage.googleapis.com/k8s-gubernator/triage/index.html redirect;
+        }
+      }
+      server {
+        server_name issue.k8s.io issues.k8s.io issue.kubernetes.io issues.kubernetes.io;
+        listen 80;
+        listen 443 ssl;
+
+        location / {
+          rewrite ^/(.*)$              https://github.com/kubernetes/kubernetes/issues/$1 redirect;
+        }
+      }
+      server {
+        server_name pr.k8s.io prs.k8s.io pr.kubernetes.io prs.kubernetes.io;
+        listen 80;
+        listen 443 ssl;
+
+        location / {
+          rewrite ^/$                  https://github.com/kubernetes/kubernetes/pulls redirect;
+          rewrite ^/(.*)$              https://github.com/kubernetes/kubernetes/pull/$1 redirect;
+        }
+      }
+      server {
+        server_name pr-test.kubernetes.io pr-test.k8s.io;
+        listen 80;
+        listen 443 ssl;
+
+        rewrite ^/$       https://k8s-gubernator.appspot.com redirect;
+        rewrite ^/(.*)$   https://k8s-gubernator.appspot.com/pr/$1 redirect;
+
+      }
+      server {
+        server_name releases.k8s.io rel.k8s.io releases.kubernetes.io rel.kubernetes.io;
+        listen 80;
+        listen 443 ssl;
+
+        location / {
+          rewrite ^/$                  https://github.com/kubernetes/kubernetes/releases redirect;
+          rewrite ^/([^/]*)(/.*)?$     https://github.com/kubernetes/kubernetes/tree/$1$2 redirect;
+        }
+      }
+
+      server {
+        server_name submit-queue.k8s.io submit-queue.kubernetes.io;
+        listen 80;
+        listen 443 ssl;
+
+        location / {
+          rewrite ^/.*$  https://prow.k8s.io/tide redirect;
+        }
+      }
+
+      server {
+        server_name testgrid.kubernetes.io testgrid.k8s.io;
+        listen 80;
+        listen 443 ssl;
+
+        rewrite ^/(.*)?$    https://k8s-testgrid.appspot.com/$1 redirect;
+      }
+    }

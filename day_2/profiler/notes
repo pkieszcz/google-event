@@ -1,0 +1,5 @@
+git clone git@github.com:GoogleCloudPlatform/golang-samples.git
+
+gcloud auth application-default login
+
+go run main.go

@@ -1,0 +1,154 @@
+
+GCP_PROJECT=$(gcloud info --format='value(config.project)')
+HALYARD_SA=halyard-service-account
+
+gcloud iam service-accounts create $HALYARD_SA \
+    --project=$GCP_PROJECT \
+    --display-name $HALYARD_SA
+
+HALYARD_SA_EMAIL=$(gcloud iam service-accounts list \
+    --project=$GCP_PROJECT \
+    --filter="displayName:$HALYARD_SA" \
+    --format='value(email)')
+
+gcloud projects add-iam-policy-binding $GCP_PROJECT \
+    --role roles/iam.serviceAccountKeyAdmin \
+    --member serviceAccount:$HALYARD_SA_EMAIL
+
+gcloud projects add-iam-policy-binding $GCP_PROJECT \
+    --role roles/container.admin \
+    --member serviceAccount:$HALYARD_SA_EMAIL
+
+
+GCS_SA=gcs-service-account
+
+gcloud iam service-accounts create $GCS_SA \
+    --project=$GCP_PROJECT \
+    --display-name $GCS_SA
+
+GCS_SA_EMAIL=$(gcloud iam service-accounts list \
+    --project=$GCP_PROJECT \
+    --filter="displayName:$GCS_SA" \
+    --format='value(email)')
+
+gcloud projects add-iam-policy-binding $GCP_PROJECT \
+    --role roles/storage.admin \
+    --member serviceAccount:$GCS_SA_EMAIL
+
+gcloud projects add-iam-policy-binding $GCP_PROJECT \
+    --member serviceAccount:$GCS_SA_EMAIL \
+    --role roles/browser
+
+
+HALYARD_HOST=$(echo $USER-halyard-`date +%m%d` | tr '_.' '-')
+
+gcloud compute instances create $HALYARD_HOST \
+    --project=$GCP_PROJECT \
+    --zone=us-central1-f \
+    --scopes=cloud-platform \
+    --service-account=$HALYARD_SA_EMAIL \
+    --image-project=ubuntu-os-cloud \
+    --image-family=ubuntu-1404-lts \
+    --machine-type=n1-standard-4
+
+gcloud compute ssh $HALYARD_HOST \
+    --project=$GCP_PROJECT \
+    --zone=us-central1-f \
+    --ssh-flag="-L 9000:localhost:9000" \
+    --ssh-flag="-L 8084:localhost:8084"
+
+# Commands on instance
+KUBECTL_LATEST=$(curl -s https://storage.googleapis.com/kubernetes-release/release/stable.txt)
+
+curl -LO https://storage.googleapis.com/kubernetes-release/release/$KUBECTL_LATEST/bin/linux/amd64/kubectl
+
+chmod +x kubectl
+
+sudo mv kubectl /usr/local/bin/kubectl
+
+curl -O https://raw.githubusercontent.com/spinnaker/halyard/master/install/debian/InstallHalyard.sh
+sudo bash InstallHalyard.sh
+. ~/.bashrc
+
+
+# edit 
+GKE_CLUSTER_NAME=standard-cluster-1
+GKE_CLUSTER_REGION=europe-west1
+
+GCP_PROJECT=$(gcloud info --format='value(config.project)')
+
+
+gcloud container clusters get-credentials $GKE_CLUSTER_NAME --region $GKE_CLUSTER_REGION --project $GCP_PROJECT
+
+
+GCS_SA=gcs-service-account
+GCS_SA_DEST=~/.gcp/gcp.json
+
+mkdir -p $(dirname $GCS_SA_DEST)
+
+GCS_SA_EMAIL=$(gcloud iam service-accounts list \
+    --filter="displayName:$GCS_SA" \
+    --format='value(email)')
+
+gcloud iam service-accounts keys create $GCS_SA_DEST \
+    --iam-account $GCS_SA_EMAIL
+
+
+# haylard
+hal config version edit --version $(hal version latest -q)
+
+hal config storage gcs edit \
+    --project $(gcloud info --format='value(config.project)') \
+    --json-path ~/.gcp/gcp.json
+
+hal config storage edit --type gcs
+
+# docker
+hal config provider docker-registry enable
+
+hal config provider docker-registry account add my-gcr-account \
+    --address gcr.io \
+    --password-file ~/.gcp/gcp.json \
+    --username _json_key
+
+hal config provider kubernetes enable
+
+hal config provider kubernetes account add my-k8s-account \
+    --docker-registries my-gcr-account \
+    --context $(kubectl config current-context)
+
+
+hal config deploy edit \
+    --account-name my-k8s-account \
+    --type distributed
+
+hal deploy apply
+
+
+#enable legacy auth
+
+kubectl apply -f ./spinnaker-service-account.yaml
+
+kubectl create clusterrolebinding \
+  --user system:serviceaccount:default:spinnaker-service-account \
+  spinnaker \
+  --clusterrole edit
+
+#not required
+#replace your.google.cloud.email@example.org with your Gcloud account
+kubectl create clusterrolebinding user-cluster-admin-binding \
+  --clusterrole=cluster-admin \
+  --user=your.google.cloud.email@example.org
+
+#Get the name of the secret
+SERVICE_ACCOUNT_TOKEN=`kubectl get serviceaccounts spinnaker-service-account -o jsonpath='{.secrets[0].name}'`
+
+#Get token and base64 decode it since all secrets are stored in base64 in Kubernetes and store it somewhere safe for later use
+kubectl get secret $SERVICE_ACCOUNT_TOKEN -o jsonpath='{.data.token}' | base64 --decode
+
+
+TEST_USER_PROFILE=`kubectl config current-context`
+kubectl config set-credentials $TEST_USER_PROFILE --token replace-with-your-token-here
+
+
+hal deploy connect

@@ -1,0 +1,14 @@
+curl -sSO "https://storage.googleapis.com/stackdriver-prometheus-documentation/rbac-setup.yml"
+
+kubectl apply -f rbac-setup.yml --as=admin --as-group=system:masters
+
+curl -sSO "https://storage.googleapis.com/stackdriver-prometheus-documentation/prometheus-service.yml"
+
+kubectl apply -f prometheus-service.yml
+
+kubectl get deployment,service -n stackdriver
+
+
+kubectl run app --image=pkieszcz/app:latest --port 8080 --requests="cpu=100m"
+kubectl expose deployment app --type=LoadBalancer --port 80 --target-port 8080
+kubectl autoscale deployment app --cpu-percent=80 --min=1 --max=30

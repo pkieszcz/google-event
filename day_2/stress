@@ -1,0 +1,1 @@
+curl -L https://goo.gl/S1Dc3R | bash -s 40 "http://35.202.4.126/productpage"

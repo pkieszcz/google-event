@@ -1,0 +1,6 @@
+kubectl run web --image=nginx \
+    --labels=app=web --port 80
+
+kubectl expose deployment/web --type=LoadBalancer
+
+kubectl apply -f web-allow-external.yaml

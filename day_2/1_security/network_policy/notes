@@ -1,0 +1,3 @@
+gcloud beta container clusters create np \
+    --enable-network-policy \
+    --zone us-central1-b

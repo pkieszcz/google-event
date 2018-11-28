@@ -1,0 +1,13 @@
+kubectl create -f restrict-root.yaml
+kubectl get psp
+
+kubectl run --image=bitnami/mariadb:10.1.24-r2 mymariadb --port=3306 --env="MARIADB_ROOT_PASSWORD=gue55m3"
+
+kubectl create -f restrict-volumes.yaml
+
+kubectl create -f restrict-ports.yaml
+kubectl run --image=bitnami/mariadb:10.1.24-r2 mymariadb --port=3306 --hostport=3306 --env="MARIADB_ROOT_PASSWORD=gue55m3"
+
+
+###
+kubectl create -f example-psp.yaml

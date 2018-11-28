@@ -1,0 +1,22 @@
+kubectl run apiserver --image=ahmet/app-on-two-ports --labels=app=apiserver
+
+kubectl create service clusterip apiserver \
+    --tcp 8001:8000 \
+    --tcp 5001:5000
+
+kubectl apply -f api-allow-5000.yaml
+
+#try
+
+kubectl run test-$RANDOM --rm -i -t --image=alpine -- sh
+wget -qO- --timeout=2 http://apiserver:8001
+wget -qO- --timeout=2 http://apiserver:5001/metrics
+
+kubectl run test-$RANDOM --labels=role=monitoring --rm -i -t --image=alpine -- sh
+wget -qO- --timeout=2 http://apiserver:8001
+wget -qO- --timeout=2 http://apiserver:5001/metrics
+
+
+kubectl delete deployment apiserver
+kubectl delete service apiserver
+kubectl delete networkpolicy api-allow-5000

@@ -1,0 +1,6 @@
+brew install kubernetes-helm
+brew install kubectl
+brew install kubectx
+
+curl -L https://git.io/getLatestIstio | sh -
+cp istio-1.0.4/bin/istioctl /usr/local/bin/.

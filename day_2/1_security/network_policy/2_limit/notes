@@ -1,0 +1,18 @@
+kubectl run apiserver --image=nginx --labels app=bookstore,role=api --expose --port 80
+
+kubectl apply -f api-allow.yaml
+
+kubectl run test-$RANDOM --rm -i -t --image=alpine -- sh
+
+wget -qO- --timeout=2 http://apiserver
+
+kubectl run test-$RANDOM --rm -i -t --image=alpine --labels app=bookstore,role=frontend -- sh
+
+wget -qO- --timeout=2 http://apiserver
+
+# Allow all
+kubectl apply -f web-allow-all.yaml
+
+kubectl run test-$RANDOM --rm -i -t --image=alpine -- sh
+
+wget -qO- --timeout=2 http://web

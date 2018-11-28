@@ -1,0 +1,8 @@
+export CLUSTER_NAME=playground
+
+gcloud container clusters update ${CLUSTER_NAME} --start-credential-rotation --region us-central1
+
+
+gcloud container operations list | grep "AUTO_UPGRADE_NODES.*RUNNING"
+gcloud container clusters update ${CLUSTER_NAME} --complete-credential-rotation
+

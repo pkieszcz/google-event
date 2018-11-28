@@ -1,0 +1,21 @@
+git clone https://github.com/GoogleCloudPlatform/distributed-load-testing-using-kubernetes.git
+
+cd distributed-load-testing-using-kubernetes/kubernetes-config
+
+kubectl create -f locust-master-controller.yaml
+
+kubectl get rc
+kubectl get pods -l name=locust,role=master
+
+kubectl create -f locust-master-service.yaml
+
+kubectl get svc locust-master
+
+kubectl create -f locust-worker-controller.yaml
+kubectl scale --replicas=20 replicationcontrollers locust-worker
+
+kubectl get pods -l name=locust,role=worker
+
+kubectl run app --image=pkieszcz/app:latest --port 8080 --requests="cpu=100m"
+kubectl expose deployment app --type=LoadBalancer --port 80 --target-port 8080
+kubectl autoscale deployment app --cpu-percent=80 --min=1 --max=30

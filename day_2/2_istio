@@ -1,0 +1,70 @@
+kubectl create clusterrolebinding cluster-admin-binding \
+    --clusterrole=cluster-admin \
+    --user=$(gcloud config get-value core/account)
+
+kubectl apply -f install/kubernetes/helm/helm-service-account.yaml
+helm init --service-account tiller
+helm install install/kubernetes/helm/istio --name istio --namespace istio-system
+
+kubectl api-versions | grep admissionregistration
+
+kubectl label namespace default istio-injection=enabled
+kubectl apply -f samples/bookinfo/platform/kube/bookinfo.yaml
+
+kubectl get services
+kubectl get pods
+
+kubectl apply -f samples/bookinfo/networking/bookinfo-gateway.yaml
+
+kubectl get svc istio-ingressgateway -n istio-system
+
+export INGRESS_HOST=$(kubectl -n istio-system get service istio-ingressgateway -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
+export INGRESS_PORT=$(kubectl -n istio-system get service istio-ingressgateway -o jsonpath='{.spec.ports[?(@.name=="http2")].port}')
+export SECURE_INGRESS_PORT=$(kubectl -n istio-system get service istio-ingressgateway -o jsonpath='{.spec.ports[?(@.name=="https")].port}')
+
+export GATEWAY_URL=$INGRESS_HOST:$INGRESS_PORT
+
+curl -o /dev/null -s -w "%{http_code}\n" http://$\{GATEWAY_URL\}/productpage
+
+
+#VISTIO
+
+git clone https://github.com/nmnellis/vistio.git
+helm install helm/vistio -f helm/vistio/values-with-ingress.yaml --name vistio --namespace default
+
+
+kubectl describe statefulset vistio-api -n default
+
+kubectl logs -n default -c vistio-api $(kubectl -n default get pod -l app=vistio-api -o jsonpath='{.items[0].metadata.name}')
+
+kubectl describe deployment vistio-web -n default
+
+kubectl -n default port-forward $(kubectl -n default get pod -l app=vistio-api -o jsonpath='{.items[0].metadata.name}') 9091:9091 &
+http://localhost:9091/graph
+
+kubectl -n default port-forward $(kubectl -n default get pod -l app=vistio-web -o jsonpath='{.items[0].metadata.name}') 8080:8080 &
+http://localhost:8080/
+
+#Enable destination rule
+
+kubectl apply -f samples/bookinfo/networking/destination-rule-all.yaml
+
+kubectl get destinationrules -o yaml
+
+kubectl get virtualservices
+kubectl get destinationrules
+kubectl get gateway
+kubectl get po
+
+
+# route to v1 only
+kubectl apply -f samples/bookinfo/networking/virtual-service-all-v1.yaml
+
+# jason
+kubectl apply -f samples/bookinfo/networking/virtual-service-reviews-test-v2.yaml
+
+# weight based routing
+
+kubectl apply -f samples/bookinfo/networking/virtual-service-all-v1.yaml
+kubectl apply -f samples/bookinfo/networking/virtual-service-reviews-50-v3.yaml
+kubectl apply -f samples/bookinfo/networking/virtual-service-reviews-v3.yaml
